@@ -1,3 +1,3 @@
 fn main() {
-    println!("Hello, world!");
+    redis_copper::server::run_server();
 }
