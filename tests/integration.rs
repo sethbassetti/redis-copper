@@ -39,6 +39,12 @@ fn start_server() -> (Server, TcpStream) {
     let stream = TcpStream::connect(redis_copper::server::ADDRESS).unwrap();
     (Server { child }, stream)
 }
+
+#[test]
+fn test_connect() {
+    let (_server, _) = start_server();
+}
+
 #[test]
 fn test_ping() {
     let (_server, mut stream) = start_server();
@@ -50,6 +56,12 @@ fn test_ping() {
 }
 
 #[test]
-fn test_connect() {
-    let (_server, _) = start_server();
+fn test_pings() {
+    let (_server, mut stream) = start_server();
+
+    // Test that the server can respond to multiple requests in one connection
+    for _ in 0..3 {
+        let response = ping(&mut stream).unwrap();
+        assert_eq!(response, "+PONG\r\n");
+    }
 }
