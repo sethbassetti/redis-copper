@@ -1,7 +1,19 @@
 use std::io::{Error, Read, Write};
 use std::net::TcpStream;
+use std::process::{Child, Command};
 use std::thread;
 use std::time::Duration;
+
+struct Server {
+    child: Child,
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
 
 fn ping(stream: &mut TcpStream) -> Result<String, Error> {
     // Send the RESP-encoded PING to the server
@@ -12,18 +24,24 @@ fn ping(stream: &mut TcpStream) -> Result<String, Error> {
     let bytes_read = stream.read(&mut buffer)?;
     Ok(String::from_utf8_lossy(&buffer[..bytes_read]).to_string())
 }
-#[test]
-fn test_ping() {
-    // First, spawn a server in a background thread
-    thread::spawn(|| {
-        redis_copper::server::run_server();
-    });
 
+fn start_server() -> (Server, TcpStream) {
+    let child = Command::new("cargo")
+        .args(["run", "--quiet"])
+        .spawn()
+        .expect("Cargo failed to compile server");
+
+    // Give server a moment to start
     // Give it a moment to start up
     thread::sleep(Duration::from_millis(200));
 
     // Then, connect to the server
-    let mut stream = TcpStream::connect(redis_copper::server::ADDRESS).unwrap();
+    let stream = TcpStream::connect(redis_copper::server::ADDRESS).unwrap();
+    (Server { child }, stream)
+}
+#[test]
+fn test_ping() {
+    let (_server, mut stream) = start_server();
 
     let response = ping(&mut stream).unwrap();
 
