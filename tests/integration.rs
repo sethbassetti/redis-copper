@@ -48,3 +48,8 @@ fn test_ping() {
     // Assert the response matches the Redis "+PONG\r\n" format
     assert_eq!(response, "+PONG\r\n");
 }
+
+#[test]
+fn test_connect() {
+    let (_server, _) = start_server();
+}
