@@ -1,72 +1,61 @@
-use std::io::{Error, Read, Write};
-use std::net::TcpStream;
-use std::process::{Child, Command};
-use std::thread;
-use std::time::Duration;
+use std::io::Error;
+use std::net::SocketAddr;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::Duration;
 
-struct Server {
-    child: Child,
-}
+use redis_copper::server::Server;
 
-impl Drop for Server {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
+const FREE_ADDRESS: &str = "127.0.0.1:0";
 
-fn ping(stream: &mut TcpStream) -> Result<String, Error> {
+async fn ping(stream: &mut TcpStream) -> Result<String, Error> {
     // Send the RESP-encoded PING to the server
-    stream.write_all(b"*1\r\n$4\r\nPING\r\n")?;
+    stream.write_all(b"*1\r\n$4\r\nPING\r\n").await?;
 
     // Get the response back
     let mut buffer = [0; 512];
-    let bytes_read = stream.read(&mut buffer)?;
+    let bytes_read = stream.read(&mut buffer).await?;
     Ok(String::from_utf8_lossy(&buffer[..bytes_read]).to_string())
 }
 
-fn start_server() -> (Server, TcpStream) {
-    let child = Command::new("cargo")
-        .args(["run", "--quiet"])
-        .spawn()
-        .expect("Cargo failed to compile server");
+async fn begin_server() -> SocketAddr {
+    let server = Server::new(Some(FREE_ADDRESS)).await.unwrap();
+    let address = server.listener.local_addr().unwrap();
 
-    // Give server a moment to start
-    // Give it a moment to start up
-    thread::sleep(Duration::from_millis(200));
-
-    // Then, connect to the server
-    let stream = TcpStream::connect(redis_copper::server::ADDRESS).unwrap();
-    (Server { child }, stream)
+    // Run the server in the background
+    tokio::spawn(async move {
+        server.run().await.unwrap();
+    });
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    address
 }
 
-#[test]
-fn test_connect() {
-    let (_server, _) = start_server();
+#[tokio::test]
+async fn test_connect() {
+    let address = begin_server().await;
+    // Attempt to connect to the server
+    TcpStream::connect(address).await.unwrap();
 }
 
-#[test]
-fn test_ping() {
-    let (_server, mut stream) = start_server();
+#[tokio::test]
+async fn test_ping() {
+    let address = begin_server().await;
+    let mut stream = TcpStream::connect(address).await.unwrap();
 
-    let response = ping(&mut stream).unwrap();
+    let response = ping(&mut stream).await.unwrap();
 
     // Assert the response matches the Redis "+PONG\r\n" format
     assert_eq!(response, "+PONG\r\n");
 }
 
-#[test]
-fn test_pings() {
-    let (_server, mut stream) = start_server();
+#[tokio::test]
+async fn test_pings() {
+    let address = begin_server().await;
+    let mut stream = TcpStream::connect(address).await.unwrap();
 
     // Test that the server can respond to multiple requests in one connection
     for _ in 0..3 {
-        let response = ping(&mut stream).unwrap();
+        let response = ping(&mut stream).await.unwrap();
         assert_eq!(response, "+PONG\r\n");
     }
-}
-
-#[test]
-fn test_concurrent_connections() {
-    
 }

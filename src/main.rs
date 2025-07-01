@@ -1,4 +1,7 @@
+use redis_copper::server::Server;
+
 #[tokio::main]
 async fn main() {
-    redis_copper::server::run_server().await;
+    let server = Server::new(None).await.unwrap();
+    server.run().await.unwrap();
 }
