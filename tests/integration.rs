@@ -2,6 +2,7 @@ use std::io::Error;
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::task::JoinHandle;
 use tokio::time::Duration;
 
 use redis_copper::server::Server;
@@ -57,5 +58,32 @@ async fn test_pings() {
     for _ in 0..3 {
         let response = ping(&mut stream).await.unwrap();
         assert_eq!(response, "+PONG\r\n");
+    }
+}
+
+#[tokio::test]
+async fn test_concurrent_connections() {
+    let address = begin_server().await;
+
+    // Define how many concurrent clients to simulate
+    let num_clients = 100;
+
+    // Create a vector of tasks
+    let mut handles = Vec::with_capacity(num_clients);
+
+    for _ in 0..num_clients {
+        let handle = tokio::spawn(async move {
+            let mut stream = TcpStream::connect(address)
+                .await
+                .expect("Failed to connect");
+            let response = ping(&mut stream).await.expect("Failed to ping");
+            assert_eq!(response, "+PONG\r\n");
+        });
+        handles.push(handle);
+    }
+
+    // Await all tasks to finish
+    for handle in handles {
+        handle.await.expect("Task panicked");
     }
 }
